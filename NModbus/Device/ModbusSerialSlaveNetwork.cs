@@ -55,15 +55,28 @@ namespace NModbus.Device
                         Transport.Write(response);
                     }
                 }
-                catch (IOException ioe)
+                catch (ObjectDisposedException)
                 {
-                    Logger.Warning($"IO Exception encountered while listening for requests - {ioe.Message}");
-                    SerialTransport.DiscardInBuffer();
+                    // The underlying SerialPort/stream was disposed.
+                    // Treat the same as InvalidOperationException.
+                    break;
                 }
-                catch (TimeoutException te)
+                catch (IOException)
                 {
-                    Logger.Trace($"Timeout Exception encountered while listening for requests - {te.Message}");
-                    SerialTransport.DiscardInBuffer();
+                    // Idle/partial-frame conditions (e.g. "Read resulted in 0 bytes returned",
+                    // sporadic line noise) surface as IOException. These are the slave's normal
+                    // wait state — logging them flooded the timeline. Genuine framing/CRC
+                    // problems still throw their own IOException with a "Checksums failed to
+                    // match" payload and reach the fallthrough Error branch via ApplyRequest.
+                    if (cancellationToken.IsCancellationRequested) break;
+                    TryDiscardInBuffer();
+                }
+                catch (TimeoutException)
+                {
+                    // The serial port's read timeout firing is the expected heartbeat of an
+                    // idle listener — it just means no master spoke during the last
+                    // ReadTimeout window. Silently flush and loop; no log line.
+                    TryDiscardInBuffer();
                 }
                 catch(InvalidOperationException)
                 {
@@ -72,12 +85,24 @@ namespace NModbus.Device
                 }
                 catch (Exception ex)
                 {
+                    if (cancellationToken.IsCancellationRequested) break;
                     Logger.Error($"{GetType()}: {ex.Message}");
-                    SerialTransport.DiscardInBuffer();
+                    TryDiscardInBuffer();
                 }
             }
 
             return Task.FromResult(0);
+        }
+
+        private void TryDiscardInBuffer()
+        {
+            // Swallow disposed/invalid-state errors here.
+            try
+            {
+                SerialTransport.DiscardInBuffer();
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
         }
     }
 }
