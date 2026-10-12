@@ -30,7 +30,18 @@ namespace NModbus.Device
                 try
                 {
                     // read request and build message
-                    byte[] frame = SerialTransport.ReadRequest();
+                    byte[] frame;
+                    try
+                    {
+                        frame = SerialTransport.ReadRequest();
+                    }
+                    catch (TimeoutException)
+                    {
+                        // Idle line times out every ReadTimeout: no log, would flood.
+                        // Partial frame timing out lands here too.
+                        TryDiscardInBuffer();
+                        continue;
+                    }
 
                     //Create the request
                     IModbusMessage request = _modbusFactory.CreateModbusRequest(frame);
@@ -55,27 +66,17 @@ namespace NModbus.Device
                         Transport.Write(response);
                     }
                 }
-                catch (ObjectDisposedException)
+                catch (IOException ioe)
                 {
-                    // The underlying SerialPort/stream was disposed.
-                    // Treat the same as InvalidOperationException.
-                    break;
-                }
-                catch (IOException)
-                {
-                    // Idle/partial-frame conditions (e.g. "Read resulted in 0 bytes returned",
-                    // sporadic line noise) surface as IOException. These are the slave's normal
-                    // wait state — logging them flooded the timeline. Genuine framing/CRC
-                    // problems still throw their own IOException with a "Checksums failed to
-                    // match" payload and reach the fallthrough Error branch via ApplyRequest.
+                    // CRC mismatch thrown above lands here.
                     if (cancellationToken.IsCancellationRequested) break;
+                    Logger.Warning($"IO Exception encountered while listening for requests - {ioe.Message}");
                     TryDiscardInBuffer();
                 }
-                catch (TimeoutException)
+                catch (TimeoutException te)
                 {
-                    // The serial port's read timeout firing is the expected heartbeat of an
-                    // idle listener — it just means no master spoke during the last
-                    // ReadTimeout window. Silently flush and loop; no log line.
+                    // Write or IgnoreResponse timeout.
+                    Logger.Trace($"Timeout Exception encountered while listening for requests - {te.Message}");
                     TryDiscardInBuffer();
                 }
                 catch(InvalidOperationException)
