@@ -75,8 +75,8 @@ namespace NModbus.Device
                 }
                 catch (TimeoutException te)
                 {
-                    // Write or IgnoreResponse timeout.
-                    Logger.Trace($"Timeout Exception encountered while listening for requests - {te.Message}");
+                    // Write or IgnoreResponse timeout. Warning: ModbusSim drops Trace.
+                    Logger.Warning($"Timeout Exception encountered while listening for requests - {te.Message}");
                     TryDiscardInBuffer();
                 }
                 catch(InvalidOperationException)
