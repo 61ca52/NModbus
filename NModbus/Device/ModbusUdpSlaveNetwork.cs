@@ -42,7 +42,17 @@ namespace NModbus.Device
                 {
                     while (!cancellationToken.IsCancellationRequested)
                     {
-                        UdpReceiveResult receiveResult = await _udpClient.ReceiveAsync().ConfigureAwait(false);
+                        UdpReceiveResult receiveResult;
+                        try
+                        {
+                            receiveResult = await _udpClient.ReceiveAsync().ConfigureAwait(false);
+                        }
+                        catch (SocketException se) when (se.SocketErrorCode == SocketError.ConnectionReset)
+                        {
+                            // ICMP port unreachable after reply to closed master port: keep listening.
+                            continue;
+                        }
+
                         IPEndPoint masterEndPoint = receiveResult.RemoteEndPoint;
                         byte[] frame = receiveResult.Buffer;
 
@@ -50,23 +60,30 @@ namespace NModbus.Device
 
                         Logger.LogFrameRx(frame);
 
-                        IModbusMessage request = ModbusFactory.CreateModbusRequest(frame.Slice(6, frame.Length - 6).ToArray());
-                        request.TransactionId = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(frame, 0));
-
-                        // perform action and build response
-                        IModbusMessage response = ApplyRequest(request);
-
-                        if (response != null)
+                        try
                         {
-                            response.TransactionId = request.TransactionId;
+                            IModbusMessage request = ModbusFactory.CreateModbusRequest(frame.Slice(6, frame.Length - 6).ToArray());
+                            request.TransactionId = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(frame, 0));
 
-                            // write response
-                            byte[] responseFrame = Transport.BuildMessageFrame(response);
+                            // perform action and build response
+                            IModbusMessage response = ApplyRequest(request);
 
-                            Logger.LogFrameTx(frame);
+                            if (response != null)
+                            {
+                                response.TransactionId = request.TransactionId;
 
-                            await _udpClient.SendAsync(responseFrame, responseFrame.Length, masterEndPoint)
-                                .ConfigureAwait(false);
+                                // write response
+                                byte[] responseFrame = Transport.BuildMessageFrame(response);
+
+                                Logger.LogFrameTx(frame);
+
+                                await _udpClient.SendAsync(responseFrame, responseFrame.Length, masterEndPoint)
+                                    .ConfigureAwait(false);
+                            }
+                        }
+                        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                        {
+                            Logger.Warning($"Discarding UDP datagram from {masterEndPoint}: {ex.Message}");
                         }
                     }
                 }
