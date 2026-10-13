@@ -113,6 +113,8 @@ namespace NModbus.Device
             
                        // perform action and build response
                        IModbusMessage response = slave.ApplyRequest(request);
+                       // Null: reply skipped, connection stays open
+                       if (response == null) continue;
                        response.TransactionId = request.TransactionId;
             
                        // write response
