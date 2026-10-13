@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Moq;
 using NModbus.Data;
+using NModbus.Device.MessageHandlers;
 using NModbus.IO;
 using NModbus.Logging;
 using NModbus.Message;
@@ -153,6 +154,31 @@ namespace NModbus.UnitTests.IO
             Assert.Equal(expectedResponse.MessageFrame, response.MessageFrame);
 
             mock.VerifyAll();
+        }
+
+        [Fact]
+        public void ReadResponseLengthKnownAfterMoreBytes()
+        {
+            var factory = new ModbusFactory(new[] { new LengthAfterFiveBytesService() });
+            var mock = new Mock<ModbusRtuTransport>(StreamResource, factory, NullModbusLogger.Instance) { CallBase = true };
+            var transport = mock.Object;
+            byte[] messageFrame = { 1, ModbusFunctionCodes.ReadHoldingRegisters, 2, 0x12, 0x34 };
+
+            mock.Setup(t => t.Read(ModbusRtuTransport.ResponseFrameStartLength)).Returns(new byte[] { 1, 3, 2, 0x12 });
+            mock.Setup(t => t.Read(1)).Returns(new byte[] { 0x34 });
+            mock.Setup(t => t.Read(2)).Returns(ModbusUtility.CalculateCrc(messageFrame));
+
+            var response = transport.ReadResponse<ReadHoldingInputRegistersResponse>();
+
+            Assert.Equal(messageFrame, response.MessageFrame);
+            mock.VerifyAll();
+        }
+
+        // Frame start lacks byte 5: asks for 1 more byte, then data rest and CRC
+        private class LengthAfterFiveBytesService : ReadHoldingRegistersService
+        {
+            public override int GetRtuResponseBytesToRead(byte[] frameStart) =>
+                frameStart.Length < 5 ? -1 : 3 + frameStart[2] + 2 - frameStart.Length;
         }
 
         [Fact]

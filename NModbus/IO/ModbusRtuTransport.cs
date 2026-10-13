@@ -98,11 +98,16 @@ namespace NModbus.IO
 
         private byte[] ReadResponse()
         {
-            byte[] frameStart = Read(ResponseFrameStartLength);
-            byte[] frameEnd = Read(ResponseBytesToRead(frameStart));
-            byte[] frame = frameStart.Concat(frameEnd).ToArray();
+            byte[] frame = Read(ResponseFrameStartLength);
+            int bytesToRead;
 
-            return frame;
+            // Negative: length still unknown, read that many more bytes, ask again
+            while ((bytesToRead = ResponseBytesToRead(frame)) < 0)
+            {
+                frame = frame.Concat(Read(-bytesToRead)).ToArray();
+            }
+
+            return frame.Concat(Read(bytesToRead)).ToArray();
         }
 
         public override void IgnoreResponse()

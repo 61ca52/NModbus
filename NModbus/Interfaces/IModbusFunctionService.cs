@@ -35,7 +35,8 @@ namespace NModbus
         int GetRtuRequestBytesToRead(byte[] frameStart);
 
         /// <summary>
-        /// Gets the number of bytes to read for a response.
+        /// Gets the number of bytes to read for a response. A negative value -n means the length
+        /// is not known yet: the RTU transport reads n more bytes and calls again with the longer frame.
         /// </summary>
         /// <param name="frameStart"></param>
         /// <returns></returns>
