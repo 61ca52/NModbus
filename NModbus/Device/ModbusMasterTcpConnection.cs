@@ -24,17 +24,21 @@ namespace NModbus.Device
         private readonly Stream _stream;
         private readonly IModbusSlaveNetwork _slaveNetwork;
         private readonly IModbusFactory _modbusFactory;
+        private readonly EndPoint _remoteEndPoint;
+        private readonly IModbusTrafficObserver _trafficObserver;
         private readonly Task _requestHandlerTask;
 
         private readonly byte[] _mbapHeader = new byte[6];
         private byte[] _messageFrame;
 
-        public ModbusMasterTcpConnection(TcpClient client, IModbusSlaveNetwork slaveNetwork, IModbusFactory modbusFactory, IModbusLogger logger)
+        public ModbusMasterTcpConnection(TcpClient client, IModbusSlaveNetwork slaveNetwork, IModbusFactory modbusFactory, IModbusLogger logger, IModbusTrafficObserver trafficObserver = null)
             : base(new ModbusIpTransport(new TcpClientAdapter(client), modbusFactory, logger))
         {
             Logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _endPoint = client.Client.RemoteEndPoint.ToString();
+            _remoteEndPoint = client.Client.RemoteEndPoint;
+            _trafficObserver = trafficObserver;
             _stream = client.GetStream();
             _slaveNetwork = slaveNetwork ?? throw new ArgumentNullException(nameof(slaveNetwork));
             _modbusFactory = modbusFactory ?? throw new ArgumentNullException(nameof(modbusFactory));
@@ -80,6 +84,7 @@ namespace NModbus.Device
                        return;
                    }
             
+                   _trafficObserver?.OnReceived(_remoteEndPoint, _mbapHeader, 0, readBytes);
                    ushort frameLength = (ushort)IPAddress.HostToNetworkOrder(BitConverter.ToInt16(_mbapHeader, 4));
                    Logger.Debug($"Master at {EndPoint} sent header: \"{string.Join(", ", _mbapHeader)}\" with {frameLength} bytes in PDU");
             
@@ -92,6 +97,7 @@ namespace NModbus.Device
                        return;
                    }
             
+                   _trafficObserver?.OnReceived(_remoteEndPoint, _messageFrame, 0, readBytes);
                    Logger.Debug($"Read frame from Master at {EndPoint} completed {readBytes} bytes");
                    byte[] frame = _mbapHeader.Concat(_messageFrame).ToArray();
                    Logger.Trace($"RX from Master at {EndPoint}: {string.Join(", ", frame)}");
@@ -111,8 +117,9 @@ namespace NModbus.Device
             
                        // write response
                        byte[] responseFrame = Transport.BuildMessageFrame(response);
-                       Logger.Information($"TX to Master at {EndPoint}: {string.Join(", ", responseFrame)}");
+                       Logger.Trace($"TX to Master at {EndPoint}: {string.Join(", ", responseFrame)}");
                        await Stream.WriteAsync(responseFrame, 0, responseFrame.Length).ConfigureAwait(false);
+                       _trafficObserver?.OnSent(_remoteEndPoint, responseFrame, 0, responseFrame.Length);
                    }
                }
             }

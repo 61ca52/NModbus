@@ -27,6 +27,11 @@ namespace NModbus.Device
         }
 
         /// <summary>
+        ///     Gets or sets the observer of the raw datagrams exchanged with masters.
+        /// </summary>
+        public IModbusTrafficObserver TrafficObserver { get; set; }
+
+        /// <summary>
         ///     Start slave listening for requests.
         /// </summary>
         public override async Task ListenAsync(CancellationToken cancellationToken = new CancellationToken())
@@ -55,6 +60,7 @@ namespace NModbus.Device
 
                         IPEndPoint masterEndPoint = receiveResult.RemoteEndPoint;
                         byte[] frame = receiveResult.Buffer;
+                        TrafficObserver?.OnReceived(masterEndPoint, frame, 0, frame.Length);
 
                         Debug.WriteLine($"Read Frame completed {frame.Length} bytes");
 
@@ -79,6 +85,7 @@ namespace NModbus.Device
 
                                 await _udpClient.SendAsync(responseFrame, responseFrame.Length, masterEndPoint)
                                     .ConfigureAwait(false);
+                                TrafficObserver?.OnSent(masterEndPoint, responseFrame, 0, responseFrame.Length);
                             }
                         }
                         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

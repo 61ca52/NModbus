@@ -68,6 +68,12 @@ namespace NModbus.Device
         }
 
         /// <summary>
+        ///     Gets or sets the observer of the raw bytes exchanged with masters. Masters that connect
+        ///     after it is set report to it.
+        /// </summary>
+        public IModbusTrafficObserver TrafficObserver { get; set; }
+
+        /// <summary>
         ///     Gets the server.
         /// </summary>
         /// <value>The server.</value>
@@ -122,7 +128,7 @@ namespace NModbus.Device
                     while (!cancellationToken.IsCancellationRequested)
                     {
                         TcpClient client = await Server.AcceptTcpClientAsync().ConfigureAwait(false);
-                        var masterConnection = new ModbusMasterTcpConnection(client, this, ModbusFactory, Logger);
+                        var masterConnection = new ModbusMasterTcpConnection(client, this, ModbusFactory, Logger, TrafficObserver);
                         masterConnection.ModbusMasterTcpConnectionClosed += OnMasterConnectionClosedHandler;
                         _masters.TryAdd(client.Client.RemoteEndPoint.ToString(), masterConnection);
                     }
