@@ -5,7 +5,8 @@
 
     internal static class ModbusFactoryExtensions
     {
-        private const int MinRequestFrameLength = 3;
+        // MBAP FC11, FC17 request: unit ID, function code only
+        private const int MinRequestFrameLength = 2;
 
         public static IModbusMessage CreateModbusRequest(this IModbusFactory factory, byte[] frame)
         {
